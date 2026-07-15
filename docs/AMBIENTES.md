@@ -1,14 +1,43 @@
-# 🐳 Ambientes, Docker e Migrações — SaborOn
+# 🌐 Matriz de Ambientes — SaborOn
 
-Como este projeto está configurado para o fluxo de Desenvolvimento local (Docker via Supabase CLI), Homologação e Produção.
+Para garantir a estabilidade do sistema, o SaborOn opera com isolamento total entre desenvolvimento, homologação e produção. **Nunca misture credenciais entre ambientes.**
 
-> Este documento adapta o guia da equipa à configuração real do repositório. Diferenças em relação ao guia original estão marcadas com ⚠️.
+| Ambiente            | Branch            | URL de Acesso                                                        | Projeto Supabase       | Região AWS     | Finalidade                          |
+| :------------------ | :---------------- | :------------------------------------------------------------------- | :--------------------- | :------------- | :---------------------------------- |
+| **Produção**        | `main`            | [sabor0n.vercel.app](https://sabor0n.vercel.app)                     | `jmvgtdvedlubbhgcmuea` | `us-east-2`    | Aplicação live para clientes reais. |
+| **Homologação**     | `homolog`         | [homolog-sabor0n.vercel.app](https://homolog-sabor0n.vercel.app)     | `xfjmqszvhqadjmzwxyil` | `ca-central-1` | Validação de features com o time.   |
+| **Desenvolvimento** | `develop` / local | `localhost:3000`                                                     | Docker local           | Máquina local  | Criação de código e testes destrutivos. |
+
+### Como o deploy funciona (Vercel)
+
+- Tudo roda em **um único projeto Vercel**: `sabor0n` (conta `codemawk`).
+- Push na `main` → deploy de **Produção** (`sabor0n.vercel.app`).
+- Push na `homolog` → deploy de **Preview** servido em `homolog-sabor0n.vercel.app` (domínio amarrado à branch).
+- Push na `develop` ou em qualquer outra branch → **não gera deploy** (Ignored Build Step do projeto só builda `main` e `homolog`).
+- As variáveis de ambiente vivem na Vercel: escopo **Production** = banco de produção; escopo **Preview** = banco de homologação.
+
+### ⚠️ Connection strings: use sempre o pooler
+
+A conexão direta (`db.<ref>.supabase.co:5432`) é **IPv6-only e NÃO funciona na Vercel** (nem na maioria das redes locais). Use o **Supavisor pooler**:
+
+| Uso                        | Formato                                                                     | Porta                 |
+| :------------------------- | :-------------------------------------------------------------------------- | :-------------------- |
+| Runtime na Vercel          | `postgresql://postgres.<ref>:<senha>@<host-pooler>:6543/postgres`           | `6543` (transaction)  |
+| Migrations (`db:migrate`)  | `postgresql://postgres.<ref>:<senha>@<host-pooler>:5432/postgres`           | `5432` (session)      |
+
+Hosts do pooler (atenção: o prefixo `aws-N` varia por projeto):
+
+- Homologação: `aws-0-ca-central-1.pooler.supabase.com`
+- Produção: `aws-1-us-east-2.pooler.supabase.com`
+
+As senhas ficam no dashboard do Supabase (Settings → Database) — nunca neste repositório.
 
 ---
 
 ## 1. Desenvolvimento Local (Docker + Supabase CLI)
 
 ### Pré-requisitos
+
 - **Docker Desktop** instalado e ativo.
 - ⚠️ A Supabase CLI **não pode** ser instalada com `npm i -g supabase` (o pacote bloqueia instalação global). Ela já está instalada como devDependency deste projeto — use sempre `npx supabase <comando>` ou os scripts npm abaixo.
 
@@ -20,7 +49,7 @@ npm run dev              # sobe o app em localhost:3000
 npm run supabase:stop    # ao final do dia
 ```
 
-- **Studio local (painel):** http://localhost:54323  ⚠️ (54321 é a URL da API, não do painel)
+- **Studio local (painel):** http://localhost:54323 ⚠️ (54321 é a URL da API, não do painel)
 - **API local:** http://localhost:54321
 - **Postgres local:** localhost:54322
 
@@ -34,25 +63,16 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key exibida por `npx supabase status`>
 DATABASE_URL=postgresql://postgres:postgres@localhost:54322/postgres
 ```
 
----
-
-## 2. Estrutura de Ambientes
-
-| Ambiente | App | Banco | Finalidade |
-| :--- | :--- | :--- | :--- |
-| **Desenvolvimento** | `localhost:3000` | Local (Docker, `localhost:54322`) | Novas features e testes rápidos |
-| **Homologação** | Preview (Vercel) | Projeto Supabase `saboron-staging` | Validação integrada pela equipa |
-| **Produção** | `saboron.com.br` | Projeto Supabase `saboron-production` | Dados reais |
-
-**Nunca misture credenciais entre ambientes.** O `.env.local` nunca vai para o GitHub (`.gitignore` já cobre `.env*`).
+O `.env.local` nunca vai para o GitHub (`.gitignore` já cobre `.env*`).
 
 ---
 
-## 3. Migrações (Drizzle)
+## 2. Migrações (Drizzle)
 
-**Regra de ouro:** nenhuma alteração de tabela é feita manualmente no painel do Supabase (local, staging ou produção). Tudo passa por migration versionada na pasta `drizzle/`.
+**Regra de ouro:** nenhuma alteração de tabela é feita manualmente no painel do Supabase (local, homolog ou produção). Tudo passa por migration versionada na pasta `drizzle/`.
 
 Migrations existentes:
+
 - `drizzle/0000_schema-inicial.sql` — todas as tabelas e enums do schema.
 - `drizzle/0001_rls-e-realtime.sql` — políticas RLS, FK `restaurantes.owner_id → auth.users` e publicação Realtime da tabela `pedidos` (migration customizada).
 
@@ -77,15 +97,28 @@ npx drizzle-kit generate --custom --name=minha-alteracao
 # edite o arquivo criado em drizzle/
 ```
 
-### Aplicando em Homologação / Produção
+### 🛠️ Como aplicar migrations na nuvem
 
-O `db:migrate` roda contra o banco apontado por `DATABASE_URL` no `.env.local`. Para staging/produção, execute com a connection string do ambiente correspondente (na esteira de deploy ou manualmente):
+As migrations **não rodam sozinhas** no deploy da Vercel. Sempre que houver uma nova migration, o responsável pelo deploy deve aplicá-la manualmente no banco correspondente **antes** de liberar a versão, usando o pooler em modo session (porta 5432):
 
 ```bash
-DATABASE_URL="postgresql://postgres.<ref>:<senha>@...pooler.supabase.com:5432/postgres" npm run db:migrate
+# Homologação
+DATABASE_URL="postgresql://postgres.xfjmqszvhqadjmzwxyil:<senha>@aws-0-ca-central-1.pooler.supabase.com:5432/postgres" npm run db:migrate
+
+# Produção
+DATABASE_URL="postgresql://postgres.jmvgtdvedlubbhgcmuea:<senha>@aws-1-us-east-2.pooler.supabase.com:5432/postgres" npm run db:migrate
 ```
 
 O `migrate` só aplica migrations pendentes — não apaga dados.
+
+---
+
+## 3. 🔒 Autenticação — configuração pendente (setup único)
+
+Caso o fluxo de Login/OAuth ou Magic Links seja ativado, é obrigatório configurar as URLs de redirecionamento no painel de cada projeto Supabase (**Authentication → URL Configuration**):
+
+- **Homologação** (`xfjmqszvhqadjmzwxyil`): Site URL = `https://homolog-sabor0n.vercel.app`
+- **Produção** (`jmvgtdvedlubbhgcmuea`): Site URL = `https://sabor0n.vercel.app`
 
 ---
 
