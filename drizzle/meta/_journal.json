@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1784049349926,
+      "tag": "0000_schema-inicial",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784049459966,
+      "tag": "0001_rls-e-realtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784068239993,
+      "tag": "0002_caixa-pdv",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784068246682,
+      "tag": "0003_rls-caixa",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784076215609,
+      "tag": "0004_configuracoes-horarios",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784076226683,
+      "tag": "0005_rls-horarios",
+      "breakpoints": true
+    }
+  ]
+}
