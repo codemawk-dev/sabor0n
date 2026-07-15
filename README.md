@@ -79,3 +79,4 @@ npm run supabase:reset
 ## Observações
 
 Este repositório contém uma configuração específica para o fluxo de desenvolvimento local com Supabase CLI e Docker. Para qualquer mudança de banco, siga o guia em [docs/AMBIENTES.md](docs/AMBIENTES.md) e prefira migrations versionadas em [drizzle/](drizzle/).
+# sabor0n
